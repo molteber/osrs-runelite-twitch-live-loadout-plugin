@@ -30,10 +30,12 @@ import com.twitchliveloadout.TwitchLiveLoadoutConfig;
 import com.twitchliveloadout.TwitchLiveLoadoutPlugin;
 import com.twitchliveloadout.twitch.TwitchApi;
 import com.twitchliveloadout.twitch.TwitchState;
+import joptsimple.internal.Strings;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.LinkBrowser;
+import org.apache.commons.lang3.tuple.Pair;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -62,6 +64,7 @@ public class ConnectivityPanel extends JPanel
 
 	private final TextPanel syncingStatusPanel = new TextPanel("Syncing status", "N/A");
 	private final TextPanel twitchStatusPanel = new TextPanel("Twitch Status", "N/A");
+	private final TextPanel twitchPubSubStatusPanel = new TextPanel("Twitch Pub sub Status", "N/A");
 	private final TextPanel authPanel = new TextPanel("Twitch Token Validity", "N/A");
 	private final TextPanel rateLimitPanel = new TextPanel("Twitch API Limit", "N/A");
 	private final TextPanel statePanel = new TextPanel("Loadout State Size", "N/A");
@@ -112,6 +115,8 @@ public class ConnectivityPanel extends JPanel
 		constraints.gridy += 2;
 		wrapper.add(twitchStatusPanel, constraints);
 		constraints.gridy++;
+		wrapper.add(twitchPubSubStatusPanel, constraints);
+		constraints.gridy++;
 		wrapper.add(syncingStatusPanel, constraints);
 		constraints.gridy++;
 		wrapper.add(authPanel, constraints);
@@ -153,6 +158,10 @@ public class ConnectivityPanel extends JPanel
 			syncingStatusText = "This client is currently not logged into an account. Twitch only receives connectivity updates without any loadout information.";
 			syncingStatusColor = WARNING_TEXT_COLOR;
 		}
+
+		var twitchPubSubStatus = getTwitchPubSubStatus();
+		String twitchPubSubStatusText = twitchPubSubStatus.getLeft();
+		String twitchPubSubStatusColor = twitchPubSubStatus.getRight();
 
 		try {
 			final JsonObject decodedToken = twitchApi.getDecodedToken();
@@ -209,6 +218,7 @@ public class ConnectivityPanel extends JPanel
 
 		syncingStatusPanel.setText(getTextInColor(syncingStatusText, syncingStatusColor));
 		twitchStatusPanel.setText(getTextInColor(twitchStatusText, twitchStatusColor));
+		twitchPubSubStatusPanel.setText(getTextInColor(twitchPubSubStatusText, twitchPubSubStatusColor));
 		authPanel.setText(getTextInColor(authText, authColor));
 		rateLimitPanel.setText(getTextInColor(rateLimitText, rateLimitColor));
 		statePanel.setText(getTextInColor(stateText, stateColor));
@@ -291,5 +301,40 @@ public class ConnectivityPanel extends JPanel
 		container.add(arrowLabel, BorderLayout.EAST);
 
 		return container;
+	}
+
+	private Pair<String, String> getTwitchPubSubStatus()
+	{
+		if (!plugin.isLoggedIn()) {
+			return Pair.of(
+					"This client is currently not logged into an account. Will connect when logged in.",
+					WARNING_TEXT_COLOR
+			);
+		}
+
+		if (Strings.isNullOrEmpty(config.twitchOAthToken())) {
+			return Pair.of(
+					"Twitch OAuth token is not provided. Will not connect.",
+					DEFAULT_TEXT_COLOR
+			);
+		}
+
+		var client = plugin.getTwitchPubSubClient();
+		if (client != null) {
+			if (client.awaitingPing()) {
+				return Pair.of(
+						"Waiting for ping confirmation from Twitch",
+						WARNING_TEXT_COLOR
+				);
+			}
+			if (client.isConnected()) {
+				return Pair.of(
+						"Connected to Twitch Pub Sub API",
+						SUCCESS_TEXT_COLOR
+				);
+			}
+		}
+
+		return Pair.of("NOT connected to Twitch Pub Sub API", ERROR_TEXT_COLOR);
 	}
 }

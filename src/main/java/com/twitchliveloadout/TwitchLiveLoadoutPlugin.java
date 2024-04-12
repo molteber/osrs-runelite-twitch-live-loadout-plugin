@@ -30,6 +30,9 @@ import com.twitchliveloadout.items.CollectionLogManager;
 import com.twitchliveloadout.items.ItemStateManager;
 import com.twitchliveloadout.marketplace.MarketplaceManager;
 import com.twitchliveloadout.minimap.MinimapManager;
+import com.twitchliveloadout.pubsub.Message;
+import com.twitchliveloadout.pubsub.TwitchPubSubSocketClient;
+import com.twitchliveloadout.pubsub.messages.ListenOnTopic;
 import com.twitchliveloadout.quests.QuestManager;
 import com.twitchliveloadout.raids.InvocationsManager;
 import com.twitchliveloadout.seasonals.SeasonalManager;
@@ -64,6 +67,7 @@ import okhttp3.OkHttpClient;
 
 import javax.inject.Inject;
 import java.awt.image.BufferedImage;
+import java.io.IOException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -236,6 +240,8 @@ public class TwitchLiveLoadoutPlugin extends Plugin
 		// when someone is already logged in and e.g. disabling and enabling the plugin
 		skillStateManager.updateSkills();
 		syncPlayerInfo();
+
+		connectTwitchPubSubClient();
 		log.info("Twitch Live Loadout has started!");
 	}
 
@@ -856,7 +862,10 @@ public class TwitchLiveLoadoutPlugin extends Plugin
 			if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
 			{
 				updateQuests();
-			}
+				connectTwitchPubSubClient();
+			} else if (!isLoggedIn()) {
+                disconnectTwitchPubSubClient();
+            }
 		} catch (Exception exception) {
 			log.warn("Could not handle game state event: ", exception);
 		}
@@ -930,6 +939,10 @@ public class TwitchLiveLoadoutPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged configChanged)
 	{
+		if (!configChanged.getGroup().equals("twitchstreamer")) {
+			return;
+		}
+
 		try {
 			String key = configChanged.getKey();
 
@@ -963,6 +976,9 @@ public class TwitchLiveLoadoutPlugin extends Plugin
 					{
 						marketplaceManager.disable();
 					}
+					break;
+				case "twitchOAthToken":
+					connectTwitchPubSubClient();
 					break;
 			}
 
@@ -1373,6 +1389,80 @@ public class TwitchLiveLoadoutPlugin extends Plugin
 		}
 
 		log.info("[SUPPORT] "+ message, exception);
+	}
+
+	@Schedule(period = 30, unit = ChronoUnit.SECONDS, asynchronous = true)
+	public void checkTwitchPubSubClient()
+	{
+		if (twitchPubSubClient == null) {
+			return;
+		}
+
+		if (twitchPubSubClient.isConnected()) {
+			twitchPubSubClient.pingCheck();
+		} else {
+			log.debug("Reconnecting ...");
+			connectTwitchPubSubClient();
+		}
+	}
+
+	@Getter
+	private TwitchPubSubSocketClient twitchPubSubClient;
+
+	private final TwitchPubSubSocketClient.SocketListener twitchPubSubClientSocketListener = new TwitchPubSubSocketClient.SocketListener()
+	{
+		@Override
+		public void onReady() {
+			try {
+				twitchPubSubClient.sendMessage(new Message<>("LISTEN", new ListenOnTopic("channel-points-channel-v1." + config.twitchChannelId())));
+			} catch (IOException ex) {
+				log.error("Unable to listen to subject. Disconnecting", ex);
+				twitchPubSubClient.disconnect();
+			}
+		}
+
+		@Override
+		public void onMessage(String type, JsonObject dataObject) {
+
+			log.info("Message: {}: {}", type, dataObject);
+			if (!type.equals("reward-redeemed")) {
+				return;
+			}
+		}
+	};
+
+	private synchronized void connectTwitchPubSubClient()
+	{
+		disconnectTwitchPubSubClient();
+
+		if (!isLoggedIn()) {
+			return;
+		}
+/*
+		if (Strings.isNullOrEmpty(config.twitchUsername())) {
+			return;
+		}
+		if (Strings.isNullOrEmpty(config.twitchOAthToken())) {
+			return;
+		}
+*/
+		twitchPubSubClient = new TwitchPubSubSocketClient(
+				gson,
+				twitchPubSubClientSocketListener,
+				config.twitchOAthToken()
+		);
+		twitchPubSubClient.connect();
+	}
+
+	private synchronized void disconnectTwitchPubSubClient()
+	{
+		if (twitchPubSubClient == null) {
+			return;
+		}
+
+		log.debug("Terminating Twitch Pub Sub client {}", twitchPubSubClient);
+		twitchPubSubClient.disconnect();
+		twitchPubSubClient = null;
 	}
 
 	@Provides

@@ -798,4 +798,41 @@ public interface TwitchLiveLoadoutConfig extends Config
 	{
 		return 5;
 	}
+
+	@ConfigSection(
+			name = "Twitch user auth",
+			description = "Settings for twitch user authentication",
+			position = 20
+	)
+	String userAuthSection = "userAuthSection";
+
+	@ConfigItem(
+			keyName = "twitchUsername",
+			name = "Twitch Username",
+			description = "Your twitch username",
+			position = 0,
+			section = userAuthSection
+	)
+	default String twitchUsername() { return ""; }
+
+	@ConfigItem(
+			keyName = "twitchChannelId",
+			name = "Twitch Channel ID",
+			description = "Your twitch Channel ID. Find it by doing TODO",
+			warning = "Will be reset if we get a bad authentication message from Twitch",
+			position = 1,
+			hidden = true,
+			section = userAuthSection
+	)
+	default String twitchChannelId() { return ""; }
+
+	@ConfigItem(
+			keyName = "twitchOAthToken",
+			name = "Twitch OAuth token",
+			description = "Grab your token from our website: TODO",
+			position = 2,
+			section = userAuthSection,
+			warning = "Will be reset if we get a bad authentication message from Twitch"
+	)
+	default String twitchOAthToken() { return ""; }
 }
